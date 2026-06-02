@@ -1,0 +1,44 @@
+name: Build & Push Runner Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "runner/**"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPO: ecs-github-runner
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push runner image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t $REGISTRY/$ECR_REPO:latest \
+            -t $REGISTRY/$ECR_REPO:${{ github.sha }} \
+            ./runner
+          docker push $REGISTRY/$ECR_REPO:latest
+          docker push $REGISTRY/$ECR_REPO:${{ github.sha }}
