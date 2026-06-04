@@ -66,6 +66,31 @@ jobs:
           echo "User: $(whoami)"
           echo "OS: $(uname -a)"
 
+      - name: Generate proof artifact
+        run: |
+          mkdir -p /tmp/runner-proof
+          cat > /tmp/runner-proof/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>ECS Runner Proof</title></head>
+          <body>
+            <h1>ECS Ephemeral Runner - Job Proof</h1>
+            <p><b>Hostname:</b> $(hostname)</p>
+            <p><b>User:</b> $(whoami)</p>
+            <p><b>OS:</b> $(uname -a)</p>
+            <p><b>Ran at:</b> $(date -u)</p>
+            <p><b>Repo:</b> ${GITHUB_REPOSITORY}</p>
+            <p><b>Run ID:</b> ${GITHUB_RUN_ID}</p>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload proof artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecs-runner-proof
+          path: /tmp/runner-proof/index.html
+
   stop-runner:
     name: Stop self-hosted runner
     needs: [start-runner, do-work]
