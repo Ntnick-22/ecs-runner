@@ -1,18 +1,24 @@
 #!/bin/bash
 set -e
 
-# Required env vars (injected by Lambda when starting the ECS task):
-# REPO_URL      - e.g. https://github.com/your-org/your-repo
-# REG_TOKEN     - GitHub registration token (short-lived, from GitHub API)
-# RUNNER_LABELS - comma-separated labels e.g. self-hosted,ecs,linux
+echo "Configuring runner for ${GITHUB_REPOSITORY}"
 
-echo "Configuring runner for ${REPO_URL}"
+REG_TOKEN=$(curl -s -X POST \
+  -H "Authorization: token ${GITHUB_PERSONAL_TOKEN}" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners/registration-token" \
+  | jq -r '.token')
+
+if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
+  echo "Failed to get registration token"
+  exit 1
+fi
 
 ./config.sh \
-  --url "${REPO_URL}" \
+  --url "https://github.com/${GITHUB_REPOSITORY}" \
   --token "${REG_TOKEN}" \
   --labels "${RUNNER_LABELS:-self-hosted,ecs,linux}" \
-  --name "ecs-runner-$(hostname)" \
+  --name "${RUNNER_NAME:-ecs-runner-$(hostname)}" \
   --ephemeral \
   --unattended \
   --disableupdate

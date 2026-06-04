@@ -1,0 +1,116 @@
+name: Test ECS Runner - 3 Jobs
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-1
+  ECS_CLUSTER: my-ecs-demo
+  TASK_DEFINITION: github-runner
+
+jobs:
+
+  start-runner:
+    name: Start self-hosted runner
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ecs-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Generate network config
+        env:
+          ECS_SUBNETS: ${{ secrets.ECS_SUBNETS }}
+          ECS_SECURITY_GROUP: ${{ secrets.ECS_SECURITY_GROUP }}
+        run: |
+          SUBNETS_JSON=$(echo "$ECS_SUBNETS" | sed 's/,/","/g')
+          cat > task-params.json << EOF
+          {
+            "launchType": "FARGATE",
+            "networkConfiguration": {
+              "awsvpcConfiguration": {
+                "subnets": ["${SUBNETS_JSON}"],
+                "securityGroups": ["${ECS_SECURITY_GROUP}"],
+                "assignPublicIp": "ENABLED"
+              }
+            }
+          }
+          EOF
+
+      - name: Start ECS runner
+        uses: PasseiDireto/gh-runner-task-action@main
+        with:
+          github_pat: ${{ secrets.RUNNER_PAT }}
+          task_definition: ${{ env.TASK_DEFINITION }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          task_params_file: task-params.json
+
+  do-work:
+    name: Run job on self-hosted runner
+    needs: start-runner
+    runs-on: [self-hosted, ecs, linux]
+
+    steps:
+      - name: Check runner
+        run: echo "Running on ECS self-hosted runner!"
+
+      - name: Check environment
+        run: |
+          echo "Hostname: $(hostname)"
+          echo "User: $(whoami)"
+          echo "OS: $(uname -a)"
+
+  stop-runner:
+    name: Stop self-hosted runner
+    needs: [start-runner, do-work]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ecs-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Stop ECS runner tasks
+        run: |
+          echo "Finding all running github-runner tasks..."
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --desired-status RUNNING \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskArns[]' \
+            --output text)
+
+          if [ -z "$TASK_ARNS" ]; then
+            echo "No running tasks found"
+            exit 0
+          fi
+
+          for TASK_ARN in $TASK_ARNS; do
+            GROUP=$(aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --tasks "$TASK_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'tasks[0].group' \
+              --output text)
+
+            if [[ "$GROUP" == *"github-runner"* ]]; then
+              echo "Stopping runner task: $TASK_ARN (group: $GROUP)"
+              aws ecs stop-task \
+                --cluster ${{ env.ECS_CLUSTER }} \
+                --task "$TASK_ARN" \
+                --reason "Job completed" \
+                --region ${{ env.AWS_REGION }}
+            fi
+          done
