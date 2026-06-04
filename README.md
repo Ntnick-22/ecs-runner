@@ -39,6 +39,15 @@ stop-runner  (ubuntu-latest, always runs)
 | `build-runner.yml` | Builds the runner Docker image and pushes to ECR | Once at setup, then only when `runner/` files change |
 | `test-runner.yaml` | 3-job ephemeral runner test | Any time you want to test |
 
+### Key Dependency
+
+The `start-runner` job uses the open source action **[PasseiDireto/gh-runner-task-action](https://github.com/marketplace/actions/starts-a-github-self-hosted-runner)** to bridge GitHub and AWS. It does two things in one step:
+
+1. Calls the GitHub API to get a short-lived runner registration token (using your PAT)
+2. Calls `aws ecs run-task` to launch the Fargate container and injects the token + repo details as environment variables
+
+Without this action you would need to write those two API calls manually in your workflow. This project uses it as-is and passes in the task definition name, cluster, and network config via `task-params.json`.
+
 ---
 
 ## Prepare Your Values
