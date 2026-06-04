@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-echo "Configuring runner for ${GITHUB_REPOSITORY}"
+echo "Configuring runner for ${GITHUB_OWNER}/${GITHUB_REPOSITORY}"
 
 REG_TOKEN=$(curl -s -X POST \
   -H "Authorization: token ${GITHUB_PERSONAL_TOKEN}" \
   -H "Accept: application/vnd.github.v3+json" \
-  "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners/registration-token" \
+  "https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPOSITORY}/actions/runners/registration-token" \
   | jq -r '.token')
 
 if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
@@ -15,7 +15,7 @@ if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
 fi
 
 ./config.sh \
-  --url "https://github.com/${GITHUB_REPOSITORY}" \
+  --url "https://github.com/${GITHUB_OWNER}/${GITHUB_REPOSITORY}" \
   --token "${REG_TOKEN}" \
   --labels "${RUNNER_LABELS:-self-hosted,ecs,linux}" \
   --name "${RUNNER_NAME:-ecs-runner-$(hostname)}" \
